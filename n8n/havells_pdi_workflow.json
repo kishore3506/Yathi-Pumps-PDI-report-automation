@@ -1,0 +1,92 @@
+{
+  "name": "Havells PDI Customer Report Delivery",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "havells-pdi-email",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger-1",
+      "name": "Havells PDI Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "havells-pdi-email"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract incoming job metadata and attachments\nconst body = $input.first().json.body || $input.first().json;\n\nconst attachments = (body.attachments || []).map(att => ({\n  filename: att.filename,\n  mimeType: att.file_type,\n  data: att.content_base64\n}));\n\nconst subject = `Havells Pre-Dispatch Inspection (PDI) Reports - Job ${body.job_code || ''} [${body.product_type || 'Equipment'}]`;\nconst htmlBody = `\n<div style=\"font-family: Arial, sans-serif; color: #333;\">\n  <h2 style=\"color: #B22222;\">HAVELLS INDIA LIMITED - Quality Assurance Dept</h2>\n  <p>Dear ${body.customer_name || 'Customer'},</p>\n  <p>Please find attached the official Pre-Delivery Inspection (PDI) report(s) for your recent order.</p>\n  <table border=\"1\" cellpadding=\"6\" style=\"border-collapse: collapse;\">\n    <tr><td><strong>Job Reference:</strong></td><td>${body.job_code}</td></tr>\n    <tr><td><strong>Product:</strong></td><td>${body.product_type} (${body.product_number})</td></tr>\n    <tr><td><strong>Lot Size:</strong></td><td>${body.lot_size} Units</td></tr>\n    <tr><td><strong>Inspection Status:</strong></td><td style=\"color: green; font-weight: bold;\">APPROVED / PASS</td></tr>\n  </table>\n  <p>The editable source Excel records and official PDF copies are attached.</p>\n  <p>Best regards,<br/><strong>Havells QA & Dispatch Team</strong></p>\n</div>\n`;\n\nreturn [{\n  json: {\n    toEmail: body.customer_email,\n    customerName: body.customer_name,\n    subject: subject,\n    html: htmlBody,\n    jobCode: body.job_code,\n    attachmentsCount: attachments.length\n  },\n  binary: attachments.reduce((acc, att, idx) => {\n    acc[`attachment_${idx}`] = {\n      data: att.data,\n      fileName: att.filename,\n      mimeType: att.mimeType\n    };\n    return acc;\n  }, {})\n}];"
+      },
+      "id": "code-formatter-1",
+      "name": "Format Email & Attachments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "qa-reports@havells-dispatch.com",
+        "toEmail": "={{ $json.toEmail }}",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.html }}",
+        "options": {
+          "attachments": "all"
+        }
+      },
+      "id": "send-email-node",
+      "name": "Send Email to Customer",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"success\",\n  \"message\": \"PDI reports delivered to customer successfully\",\n  \"recipient\": \"{{ $('Format Email & Attachments').first().json.toEmail }}\",\n  \"attachments_delivered\": {{ $('Format Email & Attachments').first().json.attachmentsCount }}\n}",
+        "options": {}
+      },
+      "id": "respond-to-webhook-1",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Havells PDI Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Email & Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email & Attachments": {
+      "main": [
+        [
+          {
+            "node": "Send Email to Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email to Customer": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
